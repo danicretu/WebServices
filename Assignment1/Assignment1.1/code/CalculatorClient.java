@@ -12,7 +12,10 @@ public class CalculatorClient {
 	
 	public static void main(String[] args) throws Exception{
 		
-		URL url = new URL("http://localhost:9999/ws/calc?wsdl");
+		double a = 0;
+		double b = 0;
+		
+		URL url = new URL("http://localhost:8080/ws/calc?wsdl");
 		
 		QName qname = new QName("http://webservicecalculator/", "CalculatorImplementationService");
 
@@ -24,19 +27,44 @@ public class CalculatorClient {
 	
         
         
-        System.out.println("please enter operation ('add', 'sub', 'mul', 'div') or 'exit' to exit");
-        
-        String operation = in.nextLine();
+       
+        String operation = "";
         
         while (!operation.equals("exit")){
         	
+        	System.out.println("please enter operation ('add', 'sub', 'mul', 'div') or 'exit' to exit");
+        	
+        	operation = in.next();
+        	
+        	if (operation.equals("exit")){
+        		System.exit(0);
+        	}
+        	
         	System.out.println("please enter first number: ");
         	
-        	double a = in.nextDouble();
+        	try{
+        		
+        		a = in.nextDouble();
+        		
+        	} catch (Exception e){
+        		System.out.println("please enter a number");
+        		
+        		continue;
+        	}
         	
-        	System.out.println("please enter second number: ");
+        	try{
+        		System.out.println("please enter second number: ");
+        		
+        		b = in.nextDouble();
+        		
+        	} catch (Exception e){
+        		System.out.println("please enter a number");
+        		
+        		continue;
+        	}
         	
-        	double b = in.nextDouble();
+        	
+        	
         	
         	if (operation.equals("add")){
         		System.out.println(calc.add(a, b));
@@ -45,16 +73,22 @@ public class CalculatorClient {
         	} else if (operation.equals("sub")){
         		System.out.println(calc.sub(a, b));
         	} else if (operation.equals("div")){
-        		System.out.println(calc.div(a, b));
+        		if (b != 0){
+        			System.out.println(calc.div(a, b));
+        		} else {
+        			System.out.println("cannot divide by 0");
+        			System.out.println("please enter operation ('add', 'sub', 'mul', 'div') or 'exit' to exit");
+                	
+                	operation = in.next();
+        			continue;
+        		}
+        		
         	} else if (operation.equals("exit")){
         		System.exit(0);
         	} else {
         		System.out.println("Please enter valid operation or exit");
         	}
-        	
-        	System.out.println("please enter operation ('add', 'sub', 'mul', 'div') or 'exit' to exit");
-        	
-        	operation = in.next();
+
         }
         
         

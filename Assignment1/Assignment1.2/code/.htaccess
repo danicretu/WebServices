@@ -1,0 +1,2 @@
+RewriteEngine On
+RewriteRule    ^([^\.]+)$    rest.php?short=$1    [NC,L]

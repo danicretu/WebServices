@@ -7,12 +7,11 @@
 		header ('AccessControlAllowOrigin:*');
 	}
 
-	function rest_get ($request, $data) {
-		if(!isset($_GET['id'])) {
-        	rest_error($request);
-        	return;
-        }
+	function unique_id($l = 5) {
+	    return substr(md5(uniqid(mt_rand(), true)), 0, $l);
+	}
 
+	function rest_get ($request, $data) {
         try {
 		    $db = new PDO("mysql:host=" . $GLOBALS['host'] .
             	";dbname=" . $GLOBALS['dbname'], $GLOBALS['username'], $GLOBALS['password']);
@@ -23,30 +22,35 @@
 		    echo "Error: " . $e->getMessage();
 		}
 
-		$db->query('CREATE TABLE IF NOT EXISTS urls (id INTEGER PRIMARY KEY NOT NULL url VARCHAR(100) NOT NULL UNIQUE)');
+		$db->query('CREATE TABLE IF NOT EXISTS urls (id INTEGER PRIMARY KEY NOT NULL AUTO_INCREMENT, url VARCHAR(100) NOT NULL UNIQUE, shorturl VARCHAR(10) NOT NULL UNIQUE)');
 
-        $id = base_convert($_GET['id'], 36, 10);
-		$query = "SELECT * FROM urls ";
-		$query .= "WHERE id=:id";
-		// to avoid sql injection
-		$statement = $db->prepare($query, array(PDO::ATTR_CURSOR => PDO::CURSOR_FWDONLY));
-        $statement->execute(array(':id' => $id));
+        if(count($data) === 0) {
+        	$query = "SELECT * FROM urls";
+			// to avoid sql injection
+			$statement = $db->prepare($query, array(PDO::ATTR_CURSOR => PDO::CURSOR_FWDONLY));
+	        $statement->execute();
+	        $urls = $statement->fetchAll();
+	        if($result) {
+	        	echo json_encode($urls);
+	        }
+	        return;
+        }
 
-		if($statement) {
-			$result = "";
-			while ($entry = $statement->fetchAll()) {
-				if(isset($_GET['id'])) {
-					header("HTTP/1.1 301 Moved");
-					header("Location: " . $entry['url']);
-					die();
-				}
-				$result .= base_convert($entry['id'], 10, 36) .  ",";
-			}
-			if(strlen($result) > 0) {
-				echo substr($result, 0, -1);
-				return;
-			}
-		}
+        else {
+        	// to avoid XSS
+			$short = htmlspecialchars($_GET['short'], ENT_QUOTES, 'UTF-8');
+
+        	$query = "SELECT url FROM urls WHERE shorturl=:short";
+			// to avoid sql injection
+			$statement = $db->prepare($query, array(PDO::ATTR_CURSOR => PDO::CURSOR_FWDONLY));
+	        $statement->execute(array(':short' => $short));
+	        $result = $statement->fetchAll();
+
+	        if($result) {
+	        	header('Location: ' . $result[0][0], true, 301);
+   				die();
+	        }
+        }
 		
 		header("HTTP/1.1 404");		
 	}
@@ -62,25 +66,25 @@
 		    echo "Error: " . $e->getMessage();
 		}
 
-		$db->query('CREATE TABLE IF NOT EXISTS urls (id INTEGER PRIMARY KEY NOT NULL AUTO_INCREMENT, url VARCHAR(100) NOT NULL UNIQUE)');
+		$db->query('CREATE TABLE IF NOT EXISTS urls (id INTEGER PRIMARY KEY NOT NULL AUTO_INCREMENT, url VARCHAR(100) NOT NULL UNIQUE, shorturl VARCHAR(10) NOT NULL UNIQUE)');
 
-		// to avoid XSS
 		$url = htmlspecialchars($_POST['url'], ENT_QUOTES, 'UTF-8');
 
 		if(isset($url) && filter_var($url, FILTER_VALIDATE_URL)) {
-			$query = "SELECT id FROM urls ";
-			$query .= "WHERE url=:url";
+			$query = "SELECT shorturl FROM urls WHERE url=:url";
 			$statement = $db->prepare($query, array(PDO::ATTR_CURSOR => PDO::CURSOR_FWDONLY));
 	        $statement->execute(array(':url' => $url));
 			$result = $statement->fetchAll();
 
 			// if there is no such url in the db yet
-			if(!$result) {
-				$querytemp = "INSERT INTO urls (url) VALUES(:url)";
-				$statementtemp = $db->prepare($querytemp, array(PDO::ATTR_CURSOR => PDO::CURSOR_FWDONLY));
+			if(count($result) === 0) {
+				$shorturl = unique_id();
+				$querytemp = $db->prepare("INSERT INTO urls (url, shorturl) VALUES(:url, :shorturl)");
+				$querytemp->bindParam(':url', $url);
+				$querytemp->bindParam(':shorturl', $shorturl);
 				
 				// insert the url, in case of failure return 500 response msg
-				if(!$statementtemp->execute(array(':url' => $url))) {
+				if(!$querytemp->execute()) {
 					header("HTTP/1.1 500");
 					die();
 				}
@@ -89,14 +93,14 @@
 				$statement = $db->prepare($query, array(PDO::ATTR_CURSOR => PDO::CURSOR_FWDONLY));
 		        $statement->execute(array(':url' => $url));
 				$result = $statement->fetchAll();
-				if(!$result) {
+				if(count($result) === 0) {
 					header("HTTP/1.1 500");
 					die();
 				}
 			}
 
 			header("HTTP/1.1 201");
-			echo json_encode(base_convert($result[0][0], 10, 36));
+			echo json_encode($result[0][0]);
 		}
 
 		else {
@@ -106,6 +110,11 @@
 	}
 
 	function rest_delete ($request, $data) {
+		if(!isset($data['id'])) {
+			rest_error($request);
+			return;
+		}
+
 		try {
 		    $db = new PDO("mysql:host=" . $GLOBALS['host'] .
             	";dbname=" . $GLOBALS['dbname'], $GLOBALS['username'], $GLOBALS['password']);
@@ -116,53 +125,49 @@
 		    echo "Error: " . $e->getMessage();
 		}
 
-		$db->query('CREATE TABLE IF NOT EXISTS urls (id INTEGER PRIMARY KEY NOT NULL AUTO_INCREMENT, url VARCHAR(100) NOT NULL UNIQUE)');
+		$db->query('CREATE TABLE IF NOT EXISTS urls (id INTEGER PRIMARY KEY NOT NULL AUTO_INCREMENT, url VARCHAR(100) NOT NULL UNIQUE, shorturl VARCHAR(10) NOT NULL UNIQUE)');
 
-		if(isset($data['id'])) {
-			$tmp = htmlspecialchars($data['id'], ENT_QUOTES, 'UTF-8');
-			$id = intval(base_convert(htmlspecialchars($tmp, 36, 10)));
-			$query = "SELECT id FROM urls WHERE id=:id";
-			$statement = $db->prepare($query, array(PDO::ATTR_CURSOR => PDO::CURSOR_FWDONLY));
-	        $statement->execute(array(':id' => $id));
-			$result = $statement->fetchAll();
+		$id = htmlspecialchars($data['id'], ENT_QUOTES, 'UTF-8');
+		$query = "SELECT id FROM urls WHERE id=:id";
+		$statement = $db->prepare($query, array(PDO::ATTR_CURSOR => PDO::CURSOR_FWDONLY));
+        $statement->execute(array(':id' => $id));
+		$result = $statement->fetchAll();
 
-			if($result) {
-				$querytemp = "DELETE FROM urls WHERE id=:id";
-				$statementtemp = $db->prepare($querytemp, array(PDO::ATTR_CURSOR => PDO::CURSOR_FWDONLY));
-				// delete the url, in case of failure return 500 response msg
-				if(!$statementtemp->execute(array(':id' => $id))) {
-					header("HTTP/1.1 500");
-					die();
-				}
+		if($result) {
+			$querytemp = "DELETE FROM urls WHERE id=:id";
+			$statementtemp = $db->prepare($querytemp, array(PDO::ATTR_CURSOR => PDO::CURSOR_FWDONLY));
+			// delete the url, in case of failure return 500 response msg
+			if(!$statementtemp->execute(array(':id' => $id))) {
+				header("HTTP/1.1 500");
+				die();
 			}
+		}
 
-			else {
-				header("HTTP/1.1 404");
-			}
-		}			
+		else {
+			header("HTTP/1.1 404");
+		}	
 	}
 
 	function rest_put ($request, $data) {
-		try {
-		    $db = new PDO("mysql:host=" . $GLOBALS['host'] .
-            	";dbname=" . $GLOBALS['dbname'], $GLOBALS['username'], $GLOBALS['password']);
-		    $db->exec("set names utf8");
-		    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-		}
-		catch(PDOException $e) {
-		    echo "Error: " . $e->getMessage();
-		}
-
-		$db->query('CREATE TABLE IF NOT EXISTS urls (id INTEGER PRIMARY KEY NOT NULL AUTO_INCREMENT, url VARCHAR(100) NOT NULL UNIQUE)');
-
 		if(!isset($data['id'])) {
 			rest_error($request);
     		return;
 		}
 
-		$tmp = htmlspecialchars($data['id'], ENT_QUOTES, 'UTF-8');
+		try {
+		    $db = new PDO("mysql:host=" . $GLOBALS['host'] .
+            	";dbname=" . $GLOBALS['dbname'], $GLOBALS['username'], $GLOBALS['password']);
+		    $db->exec("set names utf8");
+		    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+		}
+		catch(PDOException $e) {
+		    echo "Error: " . $e->getMessage();
+		}
+
+		$db->query('CREATE TABLE IF NOT EXISTS urls (id INTEGER PRIMARY KEY NOT NULL AUTO_INCREMENT, url VARCHAR(100) NOT NULL UNIQUE, shorturl VARCHAR(10) NOT NULL UNIQUE)');
+
 		$url = htmlspecialchars($data['url'], ENT_QUOTES, 'UTF-8');
-		$id = intval(base_convert($tmp, 36, 10));
+		$id = htmlspecialchars($data['id'], ENT_QUOTES, 'UTF-8');
 		$query = "SELECT id FROM urls WHERE id=:id";
 		$statement = $db->prepare($query, array(PDO::ATTR_CURSOR => PDO::CURSOR_FWDONLY));
         $statement->execute(array(':id' => $id));
@@ -173,10 +178,10 @@
 				$querytemp = $db->prepare('UPDATE urls
                                      SET url = :url
                                     WHERE id = :id');
-		        $statementtemp->bindParam(':url', $url);
+		        $querytemp->bindParam(':url', $url);
+		        $querytemp->bindParam(':id', $id);
 
-				$statementtemp = $db->prepare($querytemp, array(PDO::ATTR_CURSOR => PDO::CURSOR_FWDONLY));
-				if(!$statementtemp->execute(array(':id' => $id))) {
+				if(!$querytemp->execute()) {
 					header("HTTP/1.1 500");
 					die();
 				}
